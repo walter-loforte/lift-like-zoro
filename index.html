@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#147c72">
+    <title>Lift like Zoro</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <img class="brand-logo" src="lift-like-zoro-logo.png" alt="">
+        <div>
+          <p class="eyebrow">Workout sessions</p>
+          <h1>Lift like Zoro</h1>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Primary views">
+        <button class="tab is-active" data-view="plan">Plans</button>
+        <button class="tab" data-view="session">Session</button>
+        <button class="tab" data-view="share">Share</button>
+        <button class="tab" data-view="history">History</button>
+      </nav>
+
+      <section id="planView" class="view is-active">
+        <div class="section-heading">
+          <div>
+            <h2 id="planTitle">Plan</h2>
+            <p>Create routines, choose days, and set exercises.</p>
+          </div>
+          <button id="createPlan" class="primary-button">New</button>
+        </div>
+
+        <section class="control-panel" aria-label="Plan controls">
+          <label>
+            Plan name
+            <input id="planNameInput" type="text" autocomplete="off">
+          </label>
+          <label>
+            Active plan
+            <select id="activePlanSelect"></select>
+          </label>
+          <div class="button-row">
+            <button id="duplicatePlan" class="ghost-button">Duplicate</button>
+            <button id="openShare" class="ghost-button">Share</button>
+          </div>
+          <button id="deletePlan" class="ghost-button danger-button">Delete Plan</button>
+        </section>
+
+        <section class="day-strip" aria-label="Workout days">
+          <button class="day-pill is-active" data-day="Mon">Mon</button>
+          <button class="day-pill" data-day="Tue">Tue</button>
+          <button class="day-pill" data-day="Wed">Wed</button>
+          <button class="day-pill" data-day="Thu">Thu</button>
+          <button class="day-pill" data-day="Fri">Fri</button>
+          <button class="day-pill" data-day="Sat">Sat</button>
+          <button class="day-pill" data-day="Sun">Sun</button>
+        </section>
+
+        <div class="section-heading compact-heading">
+          <div>
+            <h2 id="dayPlanTitle">Monday</h2>
+            <p>Exercises for this day.</p>
+          </div>
+          <button id="startWorkout" class="primary-button">Start</button>
+        </div>
+
+        <div id="selectedExercises" class="selected-list" aria-live="polite"></div>
+
+        <div class="filters">
+          <label>
+            Muscle group
+            <select id="groupFilter"></select>
+          </label>
+          <label>
+            Search
+            <input id="exerciseSearch" type="search" placeholder="bench, squat, curl">
+          </label>
+        </div>
+
+        <div id="exerciseLibrary" class="library"></div>
+      </section>
+
+      <section id="sessionView" class="view">
+        <div class="section-heading">
+          <div>
+            <h2>Start Session</h2>
+            <p>Select a saved plan and log every set in kg.</p>
+          </div>
+          <button id="finishWorkout" class="primary-button">Finish</button>
+        </div>
+
+        <section class="control-panel">
+          <label>
+            Session name
+            <input id="liveSessionName" type="text" autocomplete="off">
+          </label>
+          <label>
+            Session plan
+            <select id="sessionPlanSelect"></select>
+          </label>
+          <label>
+            Training day
+            <select id="sessionDaySelect">
+              <option value="Mon">Monday</option>
+              <option value="Tue">Tuesday</option>
+              <option value="Wed">Wednesday</option>
+              <option value="Thu">Thursday</option>
+              <option value="Fri">Friday</option>
+              <option value="Sat">Saturday</option>
+              <option value="Sun">Sunday</option>
+            </select>
+          </label>
+        </section>
+
+        <div id="sessionExercises" class="session-list"></div>
+      </section>
+
+      <section id="shareView" class="view">
+        <div class="section-heading">
+          <div>
+            <h2>Share Plans</h2>
+            <p>Export a plan code or import one from another person.</p>
+          </div>
+        </div>
+
+        <section class="control-panel">
+          <label>
+            Plan to share
+            <select id="sharePlanSelect"></select>
+          </label>
+          <button id="sharePlan" class="primary-button">Create Share Code</button>
+          <label>
+            Share code
+            <textarea id="shareCode" readonly rows="5"></textarea>
+          </label>
+          <button id="copyShareCode" class="ghost-button">Copy Code</button>
+        </section>
+
+        <section class="control-panel">
+          <label>
+            Import shared plan
+            <textarea id="importCode" rows="5" placeholder="Paste a Lift Log plan code"></textarea>
+          </label>
+          <button id="importPlan" class="primary-button">Import Plan</button>
+        </section>
+      </section>
+
+      <section id="historyView" class="view">
+        <div class="section-heading">
+          <div>
+            <h2>History</h2>
+            <p>Finished sessions are saved locally on this device.</p>
+          </div>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
