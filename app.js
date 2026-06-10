@@ -78,33 +78,9 @@ const storeKey = "lift-log-pwa-v2";
 const oldStoreKey = "lift-log-prototype";
 
 const starterPlan = {
-  id: "starter-push-pull-legs",
-  name: "Starter Push Pull Legs",
-  days: {
-    Mon: [
-      { exerciseId: "barbell-bench-press", sets: 4, reps: 8 },
-      { exerciseId: "incline-dumbbell-press", sets: 3, reps: 10 },
-      { exerciseId: "triceps-pushdown", sets: 3, reps: 12 }
-    ],
-    Tue: [
-      { exerciseId: "lat-pulldown", sets: 4, reps: 10 },
-      { exerciseId: "barbell-row", sets: 3, reps: 8 },
-      { exerciseId: "dumbbell-curl", sets: 3, reps: 12 }
-    ],
-    Wed: [],
-    Thu: [
-      { exerciseId: "back-squat", sets: 4, reps: 6 },
-      { exerciseId: "romanian-deadlift", sets: 3, reps: 8 },
-      { exerciseId: "leg-extension", sets: 3, reps: 12 }
-    ],
-    Fri: [
-      { exerciseId: "overhead-press", sets: 4, reps: 8 },
-      { exerciseId: "lateral-raise", sets: 3, reps: 15 },
-      { exerciseId: "face-pull", sets: 3, reps: 15 }
-    ],
-    Sat: [],
-    Sun: []
-  }
+  id: "first-workout-plan",
+  name: "Workout Plan 1",
+  days: emptyDays()
 };
 
 let state = loadState();
@@ -129,11 +105,30 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function isCardioExercise(exerciseId) {
+  return getExercise(exerciseId).group === "Cardio";
+}
+
+function isTimedCoreExercise(exerciseId) {
+  return exerciseId === "plank" || exerciseId === "side-plank";
+}
+
 function normalizePlan(plan) {
   return {
     id: plan.id || uid(),
     name: plan.name || "Untitled Plan",
-    days: { ...emptyDays(), ...(plan.days || {}) }
+    days: Object.fromEntries(days.map((day) => [
+      day,
+      (plan.days?.[day] || []).map((item) => isCardioExercise(item.exerciseId)
+        ? { exerciseId: item.exerciseId, durationMinutes: Math.max(1, Number(item.durationMinutes || 20)) }
+        : isTimedCoreExercise(item.exerciseId)
+          ? {
+              exerciseId: item.exerciseId,
+              sets: Math.max(1, Number(item.sets || 3)),
+              durationSeconds: Math.max(1, Number(item.durationSeconds || 30))
+            }
+        : { exerciseId: item.exerciseId, sets: Math.max(1, Number(item.sets || 3)), reps: Math.max(1, Number(item.reps || 10)) })
+    ]))
   };
 }
 
@@ -146,10 +141,13 @@ function normalizeSession(session) {
     day: session.day || "Mon",
     date: session.date || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
     unit: "kg",
+    notes: session.notes || "",
     entries: (session.entries || []).map((entry) => ({
       exerciseId: entry.exerciseId,
+      durationMinutes: isCardioExercise(entry.exerciseId) ? Number(entry.durationMinutes || 0) : undefined,
       sets: (entry.sets || []).map((set) => ({
         reps: Math.max(1, Number(set.reps || 1)),
+        durationSeconds: isTimedCoreExercise(entry.exerciseId) ? Number(set.durationSeconds ?? set.reps ?? 0) : undefined,
         weightKg: Number(set.weightKg ?? set.weight ?? 0)
       }))
     }))
@@ -162,10 +160,17 @@ function normalizeSessionDraft(draft) {
     planId: draft.planId || "",
     day: draft.day || "Mon",
     name: draft.name || "",
+    notes: draft.notes || "",
     entries: (draft.entries || []).map((entry) => ({
       exerciseId: entry.exerciseId,
+      durationMinutes: isCardioExercise(entry.exerciseId)
+        ? (entry.durationMinutes === "" ? "" : Number(entry.durationMinutes || 0))
+        : undefined,
       sets: (entry.sets || []).map((set) => ({
         reps: Math.max(1, Number(set.reps || 1)),
+        durationSeconds: isTimedCoreExercise(entry.exerciseId)
+          ? (set.durationSeconds === "" ? "" : Number(set.durationSeconds ?? set.reps ?? 0))
+          : undefined,
         weightKg: set.weightKg === "" ? "" : Number(set.weightKg || 0)
       }))
     }))
@@ -236,10 +241,15 @@ function buildSessionDraft(plan = sessionPlan(), day = sessionDay) {
     planId: plan.id,
     day,
     name: defaultSessionName(plan, day),
-    entries: plan.days[day].map((item) => ({
-      exerciseId: item.exerciseId,
-      sets: Array.from({ length: item.sets }, () => ({ reps: item.reps, weightKg: "" }))
-    }))
+    notes: "",
+    entries: plan.days[day].map((item) => isCardioExercise(item.exerciseId)
+      ? { exerciseId: item.exerciseId, durationMinutes: "" }
+      : {
+          exerciseId: item.exerciseId,
+          sets: Array.from({ length: item.sets }, () => isTimedCoreExercise(item.exerciseId)
+            ? { durationSeconds: "" }
+            : { reps: item.reps, weightKg: "" })
+        })
   };
 }
 
@@ -254,15 +264,24 @@ function activeSessionDraft(createIfMissing = true) {
   }
 
   const previousEntries = existing.entries;
-  existing.entries = plan.days[sessionDay].map((item, exerciseIndex) => ({
-    exerciseId: item.exerciseId,
-    sets: Array.from({ length: item.sets }, (_, setIndex) => ({
-      reps: item.reps,
-      weightKg: previousEntries[exerciseIndex]?.exerciseId === item.exerciseId
-        ? previousEntries[exerciseIndex]?.sets[setIndex]?.weightKg ?? ""
-        : ""
-    }))
-  }));
+  existing.entries = plan.days[sessionDay].map((item, exerciseIndex) => {
+    const previousEntry = previousEntries[exerciseIndex]?.exerciseId === item.exerciseId
+      ? previousEntries[exerciseIndex]
+      : null;
+    if (isCardioExercise(item.exerciseId)) {
+      return { exerciseId: item.exerciseId, durationMinutes: previousEntry?.durationMinutes ?? "" };
+    }
+    return {
+      exerciseId: item.exerciseId,
+      sets: Array.from({ length: item.sets }, (_, setIndex) => ({
+        reps: isTimedCoreExercise(item.exerciseId) ? undefined : item.reps,
+        durationSeconds: isTimedCoreExercise(item.exerciseId)
+          ? previousEntry?.sets[setIndex]?.durationSeconds ?? ""
+          : undefined,
+        weightKg: isTimedCoreExercise(item.exerciseId) ? undefined : previousEntry?.sets[setIndex]?.weightKg ?? ""
+      }))
+    };
+  });
   return existing;
 }
 
@@ -312,6 +331,28 @@ function renderSelectedExercises() {
 
   list.innerHTML = planItems.map((item, index) => {
     const exercise = getExercise(item.exerciseId);
+    const controls = isCardioExercise(item.exerciseId)
+      ? `
+        <div class="planned-controls cardio-controls">
+          <label>Time in minutes <input data-plan-index="${index}" data-field="durationMinutes" type="number" min="1" max="600" value="${item.durationMinutes}"></label>
+          <button class="ghost-button remove-button" data-remove-index="${index}">Remove</button>
+        </div>
+      `
+      : isTimedCoreExercise(item.exerciseId)
+        ? `
+          <div class="planned-controls">
+            <label>Sets <input data-plan-index="${index}" data-field="sets" type="number" min="1" max="12" value="${item.sets}"></label>
+            <label>Seconds <input data-plan-index="${index}" data-field="durationSeconds" type="number" min="1" max="600" value="${item.durationSeconds}"></label>
+            <button class="ghost-button remove-button" data-remove-index="${index}">Remove</button>
+          </div>
+        `
+      : `
+        <div class="planned-controls">
+          <label>Sets <input data-plan-index="${index}" data-field="sets" type="number" min="1" max="12" value="${item.sets}"></label>
+          <label>Reps <input data-plan-index="${index}" data-field="reps" type="number" min="1" max="60" value="${item.reps}"></label>
+          <button class="ghost-button remove-button" data-remove-index="${index}">Remove</button>
+        </div>
+      `;
     return `
       <article class="planned-card">
         <div class="card-main">
@@ -321,11 +362,7 @@ function renderSelectedExercises() {
           </div>
           <a class="link-button" href="${videoUrl(exercise.name)}" target="_blank" rel="noreferrer">Video</a>
         </div>
-        <div class="planned-controls">
-          <label>Sets <input data-plan-index="${index}" data-field="sets" type="number" min="1" max="12" value="${item.sets}"></label>
-          <label>Reps <input data-plan-index="${index}" data-field="reps" type="number" min="1" max="60" value="${item.reps}"></label>
-          <button class="ghost-button remove-button" data-remove-index="${index}">Remove</button>
-        </div>
+        ${controls}
       </article>
     `;
   }).join("");
@@ -361,12 +398,24 @@ function renderLibrary() {
 
 function renderSessionControls() {
   const options = state.plans.map((plan) => `<option value="${plan.id}">${plan.name}</option>`).join("");
+  const isActive = Boolean(state.activeSessionDraft);
   $("#sessionPlanSelect").innerHTML = options;
   $("#sessionPlanSelect").value = sessionPlan().id;
   $("#sessionDaySelect").value = sessionDay;
   const draft = activeSessionDraft(false);
   draftSessionName = draft.name || defaultSessionName();
   $("#liveSessionName").value = draftSessionName;
+  $("#sessionNotes").value = draft.notes || "";
+  $("#liveSessionName").disabled = !isActive;
+  $("#sessionNotes").disabled = !isActive;
+  $("#sessionPlanSelect").disabled = isActive;
+  $("#sessionDaySelect").disabled = isActive;
+  $("#startSession").disabled = isActive || !sessionPlan().days[sessionDay].length;
+  $("#finishWorkout").disabled = !isActive;
+  $("#sessionHeading").textContent = isActive ? "Active Session" : "Session Setup";
+  $("#sessionStatus").textContent = isActive
+    ? "Track weights and cardio time, then press Finish."
+    : "Choose a plan and training day, then press Start.";
 }
 
 function renderSession() {
@@ -380,14 +429,58 @@ function renderSession() {
 
   $("#sessionExercises").innerHTML = planItems.map((item, exerciseIndex) => {
     const exercise = getExercise(item.exerciseId);
+    if (isCardioExercise(item.exerciseId)) {
+      return `
+        <article class="session-card">
+          <div class="card-main">
+            <div>
+              <h3>${exercise.name}</h3>
+              <p class="meta">Target: ${item.durationMinutes} minutes</p>
+            </div>
+            <a class="link-button" href="${videoUrl(exercise.name)}" target="_blank" rel="noreferrer">Video</a>
+          </div>
+          <label class="cardio-time-field">
+            Completed time
+            <span>
+              <input data-session-cardio="${exerciseIndex}" type="number" min="0" max="600" step="1" placeholder="0" value="${draft.entries[exerciseIndex]?.durationMinutes ?? ""}" ${state.activeSessionDraft ? "" : "disabled"}>
+              <strong>minutes</strong>
+            </span>
+          </label>
+        </article>
+      `;
+    }
+    if (isTimedCoreExercise(item.exerciseId)) {
+      const timedRows = Array.from({ length: item.sets }, (_, setIndex) => `
+        <div class="set-row">
+          <span class="set-index">Set ${setIndex + 1}</span>
+          <label class="weight-field">
+            <input data-session-timed-core="${exerciseIndex}" data-session-set="${setIndex}" type="number" min="0" max="600" step="1" placeholder="0" value="${draft.entries[exerciseIndex]?.sets[setIndex]?.durationSeconds ?? ""}" ${state.activeSessionDraft ? "" : "disabled"}>
+            <span>sec</span>
+          </label>
+          <span class="reps-badge">target ${item.durationSeconds}</span>
+        </div>
+      `).join("");
+      return `
+        <article class="session-card">
+          <div class="card-main">
+            <div>
+              <h3>${exercise.name}</h3>
+              <p class="meta">${item.sets} sets | ${item.durationSeconds} seconds target</p>
+            </div>
+            <a class="link-button" href="${videoUrl(exercise.name)}" target="_blank" rel="noreferrer">Video</a>
+          </div>
+          <div class="set-grid">${timedRows}</div>
+        </article>
+      `;
+    }
     const setRows = Array.from({ length: item.sets }, (_, setIndex) => `
       <div class="set-row">
         <span class="set-index">Set ${setIndex + 1}</span>
         <label class="weight-field">
-          <input data-session-exercise="${exerciseIndex}" data-session-set="${setIndex}" type="number" min="0" step="0.5" placeholder="0" value="${draft.entries[exerciseIndex]?.sets[setIndex]?.weightKg ?? ""}">
+          <input data-session-exercise="${exerciseIndex}" data-session-set="${setIndex}" type="number" min="0" step="0.5" placeholder="0" value="${draft.entries[exerciseIndex]?.sets[setIndex]?.weightKg ?? ""}" ${state.activeSessionDraft ? "" : "disabled"}>
           <span>kg</span>
         </label>
-        <span class="reps-badge">${item.reps} reps</span>
+        <span class="reps-badge">${isTimedCoreExercise(item.exerciseId) ? `${item.durationSeconds} sec` : `${item.reps} reps`}</span>
       </div>
     `).join("");
 
@@ -396,7 +489,7 @@ function renderSession() {
         <div class="card-main">
           <div>
             <h3>${exercise.name}</h3>
-            <p class="meta">${item.sets} sets | ${item.reps} reps</p>
+            <p class="meta">${item.sets} sets | ${isTimedCoreExercise(item.exerciseId) ? `${item.durationSeconds} seconds` : `${item.reps} reps`}</p>
           </div>
           <a class="link-button" href="${videoUrl(exercise.name)}" target="_blank" rel="noreferrer">Video</a>
         </div>
@@ -429,25 +522,49 @@ function renderHistory() {
       <div class="saved-entry-list">
         ${session.entries.map((entry) => renderSavedEntry(entry)).join("")}
       </div>
+      ${session.notes ? `
+        <div class="history-notes">
+          <strong>Notes</strong>
+          <p>${escapeHtml(session.notes)}</p>
+        </div>
+      ` : ""}
     </details>
   `).join("") || `<div class="empty-state">No finished sessions yet.</div>`;
 }
 
 function renderSavedEntry(entry) {
   const exercise = getExercise(entry.exerciseId);
-  const sets = entry.sets.map((set, setIndex) => `
-    <div class="history-set-row">
-      <span class="set-index">Set ${setIndex + 1}</span>
-      <span>${set.weightKg} kg</span>
-      <span class="reps-badge">${set.reps} reps</span>
-    </div>
-  `).join("");
+  const isCardio = isCardioExercise(entry.exerciseId);
+  const allowsBodyweight = exercise.group.trim().toLowerCase() === "core";
+  const isIncomplete = isCardio
+    ? Number(entry.durationMinutes) === 0
+    : !allowsBodyweight && entry.sets.some((set) => Number(set.weightKg) === 0);
+  const details = isCardio
+    ? `<div class="history-set-row"><span>Time</span><span>${entry.durationMinutes} minutes</span><span></span></div>`
+    : isTimedCoreExercise(entry.exerciseId)
+      ? `<div class="set-grid">${entry.sets.map((set, setIndex) => `
+          <div class="history-set-row">
+            <span class="set-index">Set ${setIndex + 1}</span>
+            <span>${set.durationSeconds} sec</span>
+            <span></span>
+          </div>
+        `).join("")}</div>`
+    : `<div class="set-grid">${entry.sets.map((set, setIndex) => `
+        <div class="history-set-row">
+          <span class="set-index">Set ${setIndex + 1}</span>
+          <span>${set.weightKg} kg</span>
+          <span class="reps-badge">${isTimedCoreExercise(entry.exerciseId) ? `${set.durationSeconds} sec` : `${set.reps} reps`}</span>
+        </div>
+      `).join("")}</div>`;
 
   return `
-    <div class="saved-entry">
-      <h3>${escapeHtml(exercise.name)}</h3>
+    <div class="saved-entry ${isIncomplete ? "is-incomplete" : ""}">
+      <div class="saved-entry-heading">
+        <h3>${escapeHtml(exercise.name)}</h3>
+        ${isIncomplete ? '<span class="incomplete-label">Incomplete</span>' : ""}
+      </div>
       <p class="meta">${exercise.group} | ${exercise.muscles.join(", ")}</p>
-      <div class="set-grid">${sets}</div>
+      ${details}
     </div>
   `;
 }
@@ -468,7 +585,7 @@ function exportPlan(plan) {
 function importPlanCode(code) {
   const parsed = JSON.parse(decodeURIComponent(escape(atob(code.trim()))));
   if (parsed.type !== "lift-log-plan" || !parsed.plan) throw new Error("Invalid plan code");
-  return normalizePlan({ ...parsed.plan, id: uid(), name: `${parsed.plan.name} (shared)` });
+  return normalizePlan({ ...parsed.plan, id: uid(), name: parsed.plan.name });
 }
 
 document.addEventListener("click", (event) => {
@@ -486,7 +603,11 @@ document.addEventListener("click", (event) => {
   if (tabButton) setView(tabButton.dataset.view);
 
   if (addButton && !addButton.disabled) {
-    activePlan().days[activeDay].push({ exerciseId: addButton.dataset.addId, sets: 3, reps: 10 });
+    activePlan().days[activeDay].push(isCardioExercise(addButton.dataset.addId)
+      ? { exerciseId: addButton.dataset.addId, durationMinutes: 20 }
+      : isTimedCoreExercise(addButton.dataset.addId)
+        ? { exerciseId: addButton.dataset.addId, sets: 3, durationSeconds: 30 }
+      : { exerciseId: addButton.dataset.addId, sets: 3, reps: 10 });
     saveState();
     render();
   }
@@ -513,6 +634,8 @@ document.addEventListener("click", (event) => {
 document.addEventListener("input", (event) => {
   const planInput = event.target.closest("[data-plan-index]");
   const sessionWeightInput = event.target.closest("[data-session-exercise]");
+  const sessionCardioInput = event.target.closest("[data-session-cardio]");
+  const sessionTimedCoreInput = event.target.closest("[data-session-timed-core]");
 
   if (planInput) {
     const item = activePlan().days[activeDay][Number(planInput.dataset.planIndex)];
@@ -535,12 +658,32 @@ document.addEventListener("input", (event) => {
     saveState();
   }
 
+  if (event.target.id === "sessionNotes") {
+    activeSessionDraft().notes = event.target.value;
+    saveState();
+  }
+
   if (sessionWeightInput) {
     const draft = activeSessionDraft();
     const set = draft.entries[Number(sessionWeightInput.dataset.sessionExercise)]
       ?.sets[Number(sessionWeightInput.dataset.sessionSet)];
     if (!set) return;
     set.weightKg = sessionWeightInput.value === "" ? "" : Number(sessionWeightInput.value);
+    saveState();
+  }
+
+  if (sessionCardioInput) {
+    const entry = activeSessionDraft().entries[Number(sessionCardioInput.dataset.sessionCardio)];
+    if (!entry) return;
+    entry.durationMinutes = sessionCardioInput.value === "" ? "" : Number(sessionCardioInput.value);
+    saveState();
+  }
+
+  if (sessionTimedCoreInput) {
+    const set = activeSessionDraft().entries[Number(sessionTimedCoreInput.dataset.sessionTimedCore)]
+      ?.sets[Number(sessionTimedCoreInput.dataset.sessionSet)];
+    if (!set) return;
+    set.durationSeconds = sessionTimedCoreInput.value === "" ? "" : Number(sessionTimedCoreInput.value);
     saveState();
   }
 });
@@ -662,26 +805,16 @@ $("#importPlan").addEventListener("click", () => {
   }
 });
 
-$("#startWorkout").addEventListener("click", () => {
-  if (state.activeSessionDraft && (state.activeSessionDraft.planId !== activePlan().id || state.activeSessionDraft.day !== activeDay)) {
-    alert("Finish the active session before starting another one.");
-    sessionPlanId = state.activeSessionDraft.planId;
-    sessionDay = state.activeSessionDraft.day;
-    setView("session");
-    return;
-  }
-  sessionPlanId = activePlan().id;
-  sessionDay = activeDay;
-  const currentDraft = state.activeSessionDraft;
-  if (!currentDraft || currentDraft.planId !== sessionPlanId || currentDraft.day !== sessionDay) {
-    state.activeSessionDraft = buildSessionDraft(sessionPlan(), sessionDay);
-    saveState();
-  }
+$("#startSession").addEventListener("click", () => {
+  if (!sessionPlan().days[sessionDay].length || state.activeSessionDraft) return;
+  state.activeSessionDraft = buildSessionDraft(sessionPlan(), sessionDay);
   draftSessionName = state.activeSessionDraft.name;
-  setView("session");
+  saveState();
+  render();
 });
 
 $("#finishWorkout").addEventListener("click", () => {
+  if (!state.activeSessionDraft) return;
   const plan = sessionPlan();
   const planItems = plan.days[sessionDay];
   const draft = activeSessionDraft();
@@ -699,13 +832,20 @@ $("#finishWorkout").addEventListener("click", () => {
     return;
   }
 
-  const entries = draft.entries.map((entry) => ({
-    exerciseId: entry.exerciseId,
-    sets: entry.sets.map((set) => ({
-      reps: set.reps,
-      weightKg: Number(set.weightKg || 0)
-    }))
-  }));
+  const entries = draft.entries.map((entry) => isCardioExercise(entry.exerciseId)
+    ? {
+        exerciseId: entry.exerciseId,
+        durationMinutes: Number(entry.durationMinutes || 0),
+        sets: []
+      }
+    : {
+        exerciseId: entry.exerciseId,
+        sets: entry.sets.map((set) => ({
+          reps: set.reps,
+          durationSeconds: set.durationSeconds,
+          weightKg: isTimedCoreExercise(entry.exerciseId) ? 0 : Number(set.weightKg || 0)
+        }))
+      });
 
   if (!entries.length) return;
   state.sessions.push({
@@ -716,6 +856,7 @@ $("#finishWorkout").addEventListener("click", () => {
     day: sessionDay,
     date: sessionDate,
     unit: "kg",
+    notes: draft.notes || "",
     entries
   });
   state.activeSessionDraft = null;

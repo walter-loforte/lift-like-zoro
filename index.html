@@ -65,7 +65,6 @@
             <h2 id="dayPlanTitle">Monday</h2>
             <p>Exercises for this day.</p>
           </div>
-          <button id="startWorkout" class="primary-button">Start</button>
         </div>
 
         <div id="selectedExercises" class="selected-list" aria-live="polite"></div>
@@ -87,10 +86,13 @@
       <section id="sessionView" class="view">
         <div class="section-heading">
           <div>
-            <h2>Start Session</h2>
-            <p>Select a saved plan and log every set in kg.</p>
+            <h2 id="sessionHeading">Session Setup</h2>
+            <p id="sessionStatus">Choose a plan and training day, then press Start.</p>
           </div>
-          <button id="finishWorkout" class="primary-button">Finish</button>
+          <div class="session-actions">
+            <button id="startSession" class="primary-button">Start</button>
+            <button id="finishWorkout" class="primary-button" disabled>Finish</button>
+          </div>
         </div>
 
         <section class="control-panel">
@@ -117,6 +119,13 @@
         </section>
 
         <div id="sessionExercises" class="session-list"></div>
+
+        <section class="session-notes-panel">
+          <label>
+            Session notes
+            <textarea id="sessionNotes" rows="5" placeholder="How did the session feel? Add form notes, pain, or reminders." disabled></textarea>
+          </label>
+        </section>
       </section>
 
       <section id="shareView" class="view">

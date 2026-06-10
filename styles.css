@@ -41,6 +41,14 @@ button:disabled {
   opacity: 0.58;
 }
 
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+  background: #e7ebe7;
+  color: #77817b;
+  border-color: #d3d9d3;
+}
+
 .app-shell {
   width: min(100%, 480px);
   min-height: 100vh;
@@ -195,6 +203,12 @@ h3 {
   color: #ffffff;
 }
 
+.session-actions {
+  display: grid;
+  gap: 6px;
+  min-width: 72px;
+}
+
 .ghost-button,
 .link-button {
   background: var(--accent-soft);
@@ -247,6 +261,15 @@ h3 {
 .history-list {
   display: grid;
   gap: 10px;
+}
+
+.session-notes-panel {
+  margin-top: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
 }
 
 .empty-state {
@@ -364,6 +387,21 @@ textarea {
   padding: 0 14px 14px;
 }
 
+.history-notes {
+  margin: 0 14px 14px;
+  padding: 12px;
+  background: #f7faf6;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.history-notes p {
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .card-main {
   display: flex;
   align-items: flex-start;
@@ -404,6 +442,26 @@ textarea {
   align-items: end;
 }
 
+.cardio-controls {
+  grid-template-columns: 1fr auto;
+}
+
+.cardio-time-field {
+  margin-top: 12px;
+}
+
+.cardio-time-field span {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.cardio-time-field strong {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .set-grid {
   display: grid;
   gap: 8px;
@@ -421,8 +479,33 @@ textarea {
 }
 
 .saved-entry {
-  padding-top: 12px;
+  padding: 12px;
   border-top: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.saved-entry.is-incomplete {
+  background: #fff0ee;
+  border: 1px solid #efb7af;
+}
+
+.saved-entry-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.incomplete-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #f8d6d1;
+  color: #943d32;
+  font-size: 0.74rem;
+  font-weight: 800;
 }
 
 .set-row {
