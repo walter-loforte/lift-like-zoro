@@ -1,4 +1,4 @@
-const cacheName = "lift-like-zoro-v1";
+const cacheName = "lift-like-zoro-v2";
 const files = [
   "./",
   "./index.html",

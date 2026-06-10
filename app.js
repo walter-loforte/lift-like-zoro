@@ -110,8 +110,8 @@ const starterPlan = {
 let state = loadState();
 let activeDay = "Mon";
 let activeView = "plan";
-let sessionPlanId = state.activePlanId;
-let sessionDay = "Mon";
+let sessionPlanId = state.activeSessionDraft?.planId || state.activePlanId;
+let sessionDay = state.activeSessionDraft?.day || "Mon";
 let draftSessionName = "";
 
 const $ = (selector) => document.querySelector(selector);
@@ -156,6 +156,22 @@ function normalizeSession(session) {
   };
 }
 
+function normalizeSessionDraft(draft) {
+  if (!draft) return null;
+  return {
+    planId: draft.planId || "",
+    day: draft.day || "Mon",
+    name: draft.name || "",
+    entries: (draft.entries || []).map((entry) => ({
+      exerciseId: entry.exerciseId,
+      sets: (entry.sets || []).map((set) => ({
+        reps: Math.max(1, Number(set.reps || 1)),
+        weightKg: set.weightKg === "" ? "" : Number(set.weightKg || 0)
+      }))
+    }))
+  };
+}
+
 function createEmptyPlan(name = "Workout Plan 1") {
   return normalizePlan({ id: uid(), name, days: emptyDays() });
 }
@@ -166,6 +182,7 @@ function loadState() {
     const parsed = JSON.parse(stored);
     parsed.plans = parsed.plans.map(normalizePlan);
     parsed.sessions = (parsed.sessions || []).map(normalizeSession);
+    parsed.activeSessionDraft = normalizeSessionDraft(parsed.activeSessionDraft);
     return parsed;
   }
 
@@ -173,10 +190,10 @@ function loadState() {
   if (oldStored) {
     const oldState = JSON.parse(oldStored);
     const migratedPlan = normalizePlan({ id: uid(), name: "Migrated Weekly Plan", days: oldState.plans });
-    return { plans: [migratedPlan], activePlanId: migratedPlan.id, sessions: (oldState.sessions || []).map(normalizeSession) };
+    return { plans: [migratedPlan], activePlanId: migratedPlan.id, sessions: (oldState.sessions || []).map(normalizeSession), activeSessionDraft: null };
   }
 
-  return { plans: [clone(starterPlan)], activePlanId: starterPlan.id, sessions: [] };
+  return { plans: [clone(starterPlan)], activePlanId: starterPlan.id, sessions: [], activeSessionDraft: null };
 }
 
 function saveState() {
@@ -212,6 +229,41 @@ function escapeHtml(value) {
 
 function defaultSessionName(plan = sessionPlan(), day = sessionDay) {
   return `${plan.name} - ${dayNames[day]}`;
+}
+
+function buildSessionDraft(plan = sessionPlan(), day = sessionDay) {
+  return {
+    planId: plan.id,
+    day,
+    name: defaultSessionName(plan, day),
+    entries: plan.days[day].map((item) => ({
+      exerciseId: item.exerciseId,
+      sets: Array.from({ length: item.sets }, () => ({ reps: item.reps, weightKg: "" }))
+    }))
+  };
+}
+
+function activeSessionDraft(createIfMissing = true) {
+  const plan = sessionPlan();
+  const existing = state.activeSessionDraft;
+  if (!existing || existing.planId !== plan.id || existing.day !== sessionDay) {
+    if (!createIfMissing) return buildSessionDraft(plan, sessionDay);
+    state.activeSessionDraft = buildSessionDraft(plan, sessionDay);
+    saveState();
+    return state.activeSessionDraft;
+  }
+
+  const previousEntries = existing.entries;
+  existing.entries = plan.days[sessionDay].map((item, exerciseIndex) => ({
+    exerciseId: item.exerciseId,
+    sets: Array.from({ length: item.sets }, (_, setIndex) => ({
+      reps: item.reps,
+      weightKg: previousEntries[exerciseIndex]?.exerciseId === item.exerciseId
+        ? previousEntries[exerciseIndex]?.sets[setIndex]?.weightKg ?? ""
+        : ""
+    }))
+  }));
+  return existing;
 }
 
 function todayLabel() {
@@ -312,13 +364,15 @@ function renderSessionControls() {
   $("#sessionPlanSelect").innerHTML = options;
   $("#sessionPlanSelect").value = sessionPlan().id;
   $("#sessionDaySelect").value = sessionDay;
-  if (!draftSessionName) draftSessionName = defaultSessionName();
+  const draft = activeSessionDraft(false);
+  draftSessionName = draft.name || defaultSessionName();
   $("#liveSessionName").value = draftSessionName;
 }
 
 function renderSession() {
   const plan = sessionPlan();
   const planItems = plan.days[sessionDay];
+  const draft = activeSessionDraft(false);
   if (!planItems.length) {
     $("#sessionExercises").innerHTML = `<div class="empty-state">${plan.name} has no exercises for ${dayNames[sessionDay]}.</div>`;
     return;
@@ -330,7 +384,7 @@ function renderSession() {
       <div class="set-row">
         <span class="set-index">Set ${setIndex + 1}</span>
         <label class="weight-field">
-          <input data-session-exercise="${exerciseIndex}" data-session-set="${setIndex}" type="number" min="0" step="0.5" placeholder="0">
+          <input data-session-exercise="${exerciseIndex}" data-session-set="${setIndex}" type="number" min="0" step="0.5" placeholder="0" value="${draft.entries[exerciseIndex]?.sets[setIndex]?.weightKg ?? ""}">
           <span>kg</span>
         </label>
         <span class="reps-badge">${item.reps} reps</span>
@@ -458,6 +512,7 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("input", (event) => {
   const planInput = event.target.closest("[data-plan-index]");
+  const sessionWeightInput = event.target.closest("[data-session-exercise]");
 
   if (planInput) {
     const item = activePlan().days[activeDay][Number(planInput.dataset.planIndex)];
@@ -476,24 +531,43 @@ document.addEventListener("input", (event) => {
 
   if (event.target.id === "liveSessionName") {
     draftSessionName = event.target.value;
+    activeSessionDraft().name = draftSessionName;
+    saveState();
+  }
+
+  if (sessionWeightInput) {
+    const draft = activeSessionDraft();
+    const set = draft.entries[Number(sessionWeightInput.dataset.sessionExercise)]
+      ?.sets[Number(sessionWeightInput.dataset.sessionSet)];
+    if (!set) return;
+    set.weightKg = sessionWeightInput.value === "" ? "" : Number(sessionWeightInput.value);
+    saveState();
   }
 });
 
 $("#activePlanSelect").addEventListener("change", (event) => {
   state.activePlanId = event.target.value;
-  sessionPlanId = event.target.value;
-  draftSessionName = defaultSessionName();
   saveState();
   render();
 });
 
 $("#sessionPlanSelect").addEventListener("change", (event) => {
+  if (state.activeSessionDraft && event.target.value !== state.activeSessionDraft.planId) {
+    alert("Finish the active session before switching to another plan.");
+    event.target.value = state.activeSessionDraft.planId;
+    return;
+  }
   sessionPlanId = event.target.value;
   draftSessionName = defaultSessionName();
   render();
 });
 
 $("#sessionDaySelect").addEventListener("change", (event) => {
+  if (state.activeSessionDraft && event.target.value !== state.activeSessionDraft.day) {
+    alert("Finish the active session before switching to another training day.");
+    event.target.value = state.activeSessionDraft.day;
+    return;
+  }
   sessionDay = event.target.value;
   activeDay = event.target.value;
   draftSessionName = defaultSessionName();
@@ -513,8 +587,6 @@ $("#createPlan").addEventListener("click", () => {
   const plan = normalizePlan({ id: uid(), name: `Workout Plan ${planNumber}`, days: emptyDays() });
   state.plans.push(plan);
   state.activePlanId = plan.id;
-  sessionPlanId = plan.id;
-  draftSessionName = defaultSessionName(plan, activeDay);
   saveState();
   render();
   $("#planNameInput").focus();
@@ -526,14 +598,16 @@ $("#duplicatePlan").addEventListener("click", () => {
   const plan = normalizePlan({ id: uid(), name: `${source.name} Copy`, days: clone(source.days) });
   state.plans.push(plan);
   state.activePlanId = plan.id;
-  sessionPlanId = plan.id;
-  draftSessionName = defaultSessionName(plan, activeDay);
   saveState();
   render();
 });
 
 $("#deletePlan").addEventListener("click", () => {
   const plan = activePlan();
+  if (state.activeSessionDraft?.planId === plan.id) {
+    alert("Finish the active session before deleting its plan.");
+    return;
+  }
   if (!confirm(`Delete "${plan.name}"? Saved history will stay, but this plan will be removed.`)) return;
   state.plans = state.plans.filter((item) => item.id !== plan.id);
 
@@ -543,8 +617,10 @@ $("#deletePlan").addEventListener("click", () => {
   }
 
   state.activePlanId = state.plans[0].id;
-  sessionPlanId = state.activePlanId;
-  draftSessionName = defaultSessionName();
+  if (!state.plans.some((item) => item.id === sessionPlanId)) {
+    sessionPlanId = state.activePlanId;
+    draftSessionName = defaultSessionName();
+  }
   saveState();
   render();
 });
@@ -578,8 +654,6 @@ $("#importPlan").addEventListener("click", () => {
     const plan = importPlanCode($("#importCode").value);
     state.plans.push(plan);
     state.activePlanId = plan.id;
-    sessionPlanId = plan.id;
-    draftSessionName = defaultSessionName(plan, activeDay);
     $("#importCode").value = "";
     saveState();
     render();
@@ -589,16 +663,29 @@ $("#importPlan").addEventListener("click", () => {
 });
 
 $("#startWorkout").addEventListener("click", () => {
+  if (state.activeSessionDraft && (state.activeSessionDraft.planId !== activePlan().id || state.activeSessionDraft.day !== activeDay)) {
+    alert("Finish the active session before starting another one.");
+    sessionPlanId = state.activeSessionDraft.planId;
+    sessionDay = state.activeSessionDraft.day;
+    setView("session");
+    return;
+  }
   sessionPlanId = activePlan().id;
   sessionDay = activeDay;
-  draftSessionName = defaultSessionName();
+  const currentDraft = state.activeSessionDraft;
+  if (!currentDraft || currentDraft.planId !== sessionPlanId || currentDraft.day !== sessionDay) {
+    state.activeSessionDraft = buildSessionDraft(sessionPlan(), sessionDay);
+    saveState();
+  }
+  draftSessionName = state.activeSessionDraft.name;
   setView("session");
 });
 
 $("#finishWorkout").addEventListener("click", () => {
   const plan = sessionPlan();
   const planItems = plan.days[sessionDay];
-  const sessionName = ($("#liveSessionName").value || draftSessionName || defaultSessionName(plan, sessionDay)).trim();
+  const draft = activeSessionDraft();
+  const sessionName = (draft.name || draftSessionName || defaultSessionName(plan, sessionDay)).trim();
   const sessionDate = todayLabel();
   const duplicateSession = state.sessions.some((session) =>
     session.name === sessionName &&
@@ -612,11 +699,11 @@ $("#finishWorkout").addEventListener("click", () => {
     return;
   }
 
-  const entries = planItems.map((item, exerciseIndex) => ({
-    exerciseId: item.exerciseId,
-    sets: Array.from({ length: item.sets }, (_, setIndex) => ({
-      reps: item.reps,
-      weightKg: Number(document.querySelector(`[data-session-exercise="${exerciseIndex}"][data-session-set="${setIndex}"]`)?.value || 0)
+  const entries = draft.entries.map((entry) => ({
+    exerciseId: entry.exerciseId,
+    sets: entry.sets.map((set) => ({
+      reps: set.reps,
+      weightKg: Number(set.weightKg || 0)
     }))
   }));
 
@@ -631,8 +718,9 @@ $("#finishWorkout").addEventListener("click", () => {
     unit: "kg",
     entries
   });
+  state.activeSessionDraft = null;
   saveState();
-  draftSessionName = defaultSessionName();
+  draftSessionName = "";
   setView("history");
 });
 
